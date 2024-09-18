@@ -8,45 +8,45 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <sys/time.h> /* Added to handle gettimeofday */
+#include <sys/time.h>
 
 /**************************************************/
 /* a few simple linked list functions             */
 /**************************************************/
 
 struct node {
-  int socket;
-  struct sockaddr_in client_addr;
-  int pending_data;
-  struct node *next;
+    int socket;
+    struct sockaddr_in client_addr;
+    int pending_data;
+    struct node *next;
 };
 
 /* remove the data structure associated with a connected socket */
 void dump(struct node *head, int socket) {
-  struct node *current, *temp;
-  current = head;
+    struct node *current, *temp;
+    current = head;
 
-  while (current->next) {
-    if (current->next->socket == socket) {
-      temp = current->next;
-      current->next = temp->next;
-      free(temp);
-      return;
-    } else {
-      current = current->next;
+    while (current->next) {
+        if (current->next->socket == socket) {
+            temp = current->next;
+            current->next = temp->next;
+            free(temp);
+            return;
+        } else {
+            current = current->next;
+        }
     }
-  }
 }
 
 /* create the data structure associated with a connected socket */
 void add(struct node *head, int socket, struct sockaddr_in addr) {
-  struct node *new_node;
-  new_node = (struct node *)malloc(sizeof(struct node));
-  new_node->socket = socket;
-  new_node->client_addr = addr;
-  new_node->pending_data = 0;
-  new_node->next = head->next;
-  head->next = new_node;
+    struct node *new_node;
+    new_node = (struct node *)malloc(sizeof(struct node));
+    new_node->socket = socket;
+    new_node->client_addr = addr;
+    new_node->pending_data = 0;
+    new_node->next = head->next;
+    head->next = new_node;
 }
 
 /*****************************************/
@@ -55,142 +55,196 @@ void add(struct node *head, int socket, struct sockaddr_in addr) {
 
 int main(int argc, char **argv) {
 
-  int sock, new_sock, max;
-  int optval = 1;
+    int sock, new_sock, max;
+    int optval = 1;
 
-  struct sockaddr_in sin, addr;
-  unsigned short server_port = atoi(argv[1]);
+    struct sockaddr_in sin, addr;
+    unsigned short server_port = atoi(argv[1]);
 
-  socklen_t addr_len = sizeof(struct sockaddr_in);
+    socklen_t addr_len = sizeof(struct sockaddr_in);
 
-  int BACKLOG = 5;
+    int BACKLOG = 5;
 
-  fd_set read_set, write_set;
-  struct timeval time_out;
-  int select_retval;
+    fd_set read_set, write_set;
+    struct timeval time_out;
+    int select_retval;
 
-  char *message = "Welcome! COMP/ELEC 429 Students!\n";
+    struct node head;
+    struct node *current, *next;
 
-  int count;
-  int num;
-
-  struct node head;
-  struct node *current, *next;
-
-  /* Allocate buffer size dynamically */
-  int BUF_LEN = 65535; /* Max message size as per project requirement */
-  char *buf = (char *)malloc(BUF_LEN);
-  if (!buf) {
-    perror("failed to allocate buffer");
-    abort();
-  }
-
-  head.socket = -1;
-  head.next = 0;
-
-  if ((sock = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
-    perror ("opening TCP socket");
-    abort ();
-  }
-
-  if (setsockopt (sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof (optval)) < 0) {
-    perror ("setting TCP socket option");
-    abort ();
-  }
-
-  memset (&sin, 0, sizeof (sin));
-  sin.sin_family = AF_INET;
-  sin.sin_addr.s_addr = INADDR_ANY;
-  sin.sin_port = htons (server_port);
-
-  if (bind(sock, (struct sockaddr *) &sin, sizeof (sin)) < 0) {
-    perror("binding socket to address");
-    abort();
-  }
-
-  if (listen (sock, BACKLOG) < 0) {
-    perror ("listen on socket failed");
-    abort ();
-  }
-
-  while (1) {
-
-    FD_ZERO (&read_set);
-    FD_ZERO (&write_set);
-
-    FD_SET (sock, &read_set);
-    max = sock;
-
-    for (current = head.next; current; current = current->next) {
-      FD_SET(current->socket, &read_set);
-      if (current->pending_data) {
-        FD_SET(current->socket, &write_set);
-      }
-      if (current->socket > max) {
-        max = current->socket;
-      }
+    /* Allocate buffer size dynamically */
+    int BUF_LEN = 65535; /* Max message size as per project requirement */
+    char *buf = (char *)malloc(BUF_LEN);
+    if (!buf) {
+        perror("failed to allocate buffer");
+        abort();
     }
 
-    time_out.tv_usec = 100000;
-    time_out.tv_sec = 0;
+    head.socket = -1;
+    head.next = 0;
 
-    select_retval = select(max+1, &read_set, &write_set, NULL, &time_out);
-    if (select_retval < 0) {
-      perror ("select failed");
-      abort ();
+    /* Create socket */
+    if ((sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
+        perror("opening TCP socket");
+        abort();
     }
 
-    if (select_retval == 0) {
-      continue;
+    /* Set socket options */
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+        perror("setting TCP socket option");
+        abort();
     }
 
-    if (select_retval > 0) {
-      if (FD_ISSET(sock, &read_set)) {
-        new_sock = accept (sock, (struct sockaddr *) &addr, &addr_len);
+    memset(&sin, 0, sizeof(sin));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = INADDR_ANY;
+    sin.sin_port = htons(server_port);
 
-        if (new_sock < 0) {
-          perror ("error accepting connection");
-          abort ();
+    /* Bind socket */
+    if (bind(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+        perror("binding socket to address");
+        abort();
+    }
+
+    /* Listen for connections */
+    if (listen(sock, BACKLOG) < 0) {
+        perror("listen on socket failed");
+        abort();
+    }
+
+    /* Main server loop */
+    while (1) {
+
+        FD_ZERO(&read_set);
+        FD_ZERO(&write_set);
+
+        FD_SET(sock, &read_set);
+        max = sock;
+
+        for (current = head.next; current; current = current->next) {
+            FD_SET(current->socket, &read_set);
+            if (current->pending_data) {
+                FD_SET(current->socket, &write_set);
+            }
+            if (current->socket > max) {
+                max = current->socket;
+            }
         }
 
-        if (fcntl (new_sock, F_SETFL, O_NONBLOCK) < 0) {
-          perror ("making socket non-blocking");
-          abort ();
+        time_out.tv_usec = 100000;
+        time_out.tv_sec = 0;
+
+        select_retval = select(max + 1, &read_set, &write_set, NULL, &time_out);
+        if (select_retval < 0) {
+            perror("select failed");
+            abort();
         }
 
-        printf("Accepted connection. Client IP address is: %s\n",
-               inet_ntoa(addr.sin_addr));
+        if (select_retval == 0) {
+            continue;
+        }
 
-        add(&head, new_sock, addr);
-      }
+        if (select_retval > 0) {
+            /* Accept new connection */
+            if (FD_ISSET(sock, &read_set)) {
+                new_sock = accept(sock, (struct sockaddr *)&addr, &addr_len);
 
-      for (current = head.next; current; current = next) {
-        next = current->next;
+                if (new_sock < 0) {
+                    perror("error accepting connection");
+                    abort();
+                }
 
-        if (FD_ISSET(current->socket, &read_set)) {
-          /* Receive the ping message from the client */
-          count = recv(current->socket, buf, BUF_LEN, 0);
-          if (count <= 0) {
-            if (count == 0) {
-              printf("Client closed connection. Client IP address is: %s\n", inet_ntoa(current->client_addr.sin_addr));
-            } else {
-              perror("error receiving from a client");
+                /* Set the socket to non-blocking mode */
+                if (fcntl(new_sock, F_SETFL, O_NONBLOCK) < 0) {
+                    perror("making socket non-blocking");
+                    abort();
+                }
+
+                printf("Accepted connection. Client IP address is: %s\n", inet_ntoa(addr.sin_addr));
+                add(&head, new_sock, addr);
             }
 
-            close(current->socket);
-            dump(&head, current->socket);
-          } else {
-            /* Echo the same message back (Pong) */
-            int sent = send(current->socket, buf, count, 0);
-            if (sent == -1) {
-              perror("Error sending pong");
-            } else {
-              printf("Received and echoed %d bytes from %s\n",
-                     count, inet_ntoa(current->client_addr.sin_addr));
+            /* Handle data from existing connections */
+            for (current = head.next; current; current = next) {
+                next = current->next;
+
+                if (FD_ISSET(current->socket, &read_set)) {
+                    /* Step 1: Receive the first 2 bytes to get the message size */
+                    unsigned short expected_size = 0;
+                    int size_count = recv(current->socket, &expected_size, sizeof(unsigned short), 0);
+
+                    if (size_count <= 0) {
+                        if (size_count == 0) {
+                            printf("Client closed connection. Client IP address is: %s\n", inet_ntoa(current->client_addr.sin_addr));
+                        } else {
+                            perror("Error receiving message size from client");
+                        }
+                        close(current->socket);
+                        dump(&head, current->socket);
+                        continue;
+                    }
+
+                    /* Convert the size from network byte order to host byte order */
+                    expected_size = ntohs(expected_size);
+                    printf("Expected size (including size bytes): %d\n", expected_size);
+
+                    /* Adjust total size to include the first 2 bytes for the size */
+                    int total_size = expected_size; // This includes the first 2 bytes (size indicator)
+                    int message_size = total_size - sizeof(unsigned short); // Message size without the size indicator
+                    printf("Message size: %d\n", message_size);
+
+                    /* Step 2: Receive the rest of the message */
+                    int total_received = 0;
+                    while (total_received < message_size) {
+                        int recv_count = recv(current->socket, buf + total_received, message_size - total_received, 0);
+                        printf("recv_count: %d \n", recv_count);
+
+                        if (recv_count == -1) {
+                            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                                // No data available right now, try again later
+                                continue;
+                            } else {
+                                perror("Error receiving full message");
+                                close(current->socket);
+                                dump(&head, current->socket);
+                                break;
+                            }
+                        }
+
+                        if (recv_count == 0) {
+                            printf("Client closed connection during message reception. IP: %s\n", inet_ntoa(current->client_addr.sin_addr));
+                            close(current->socket);
+                            dump(&head, current->socket);
+                            break;
+                        }
+
+                        total_received += recv_count;
+                    }
+
+                    /* Step 3: If we successfully received the full message, echo it back */
+                    if (total_received == message_size) {
+                        int total_sent = 0;
+                        while (total_sent < total_size) {
+                            int sent = send(current->socket, buf + total_sent, total_size - total_sent, 0); // Echo the full message including size indicator
+                            if (sent == -1) {
+                                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                                    // Try sending later
+                                    continue;
+                                } else {
+                                    perror("Error sending pong");
+                                    break;
+                                }
+                            }
+                            total_sent += sent;
+                        }
+
+                        printf("Sent %d bytes back to client from %s\n", total_sent, inet_ntoa(current->client_addr.sin_addr));
+                    }
+                }
             }
-          }
         }
-      }
     }
-  }
+
+    free(buf); /* Free the allocated buffer */
+    return 0;
 }
