@@ -138,6 +138,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
             total_received += bytes_received;
+            printf("current received number at client: %d\n", total_received);
         }
 
         /* Get the current time after receiving (end timestamp) */
