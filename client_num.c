@@ -97,8 +97,20 @@ int main(int argc, char** argv) {
         /* Clear the buffer before sending */
         memset(buffer, 0, size);
 
+        /* Add message size in the first 2 bytes (in network byte order) */
+        unsigned short net_size = htons(size);
+        memcpy(buffer, &net_size, sizeof(net_size));
+
         /* Get the current time before sending (start timestamp) */
         gettimeofday(&start, NULL);
+
+        /* Insert the timestamp in the next 16 bytes (network byte order) */
+        unsigned long long sec = (unsigned long long)start.tv_sec;
+        unsigned long long usec = (unsigned long long)start.tv_usec;
+        sec = htobe64(sec);  // Convert to network byte order (big-endian)
+        usec = htobe64(usec); // Convert to network byte order (big-endian)
+        memcpy(buffer + 2, &sec, sizeof(sec));
+        memcpy(buffer + 10, &usec, sizeof(usec));
 
         /* Send the ping message */
         if (send(sock, buffer, size, 0) != size) {
@@ -108,12 +120,24 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        /* Receive the pong message */
-        if (recv(sock, buffer, size, 0) != size) {
-            perror("Receive failed");
-            close(sock);
-            free(buffer);
-            return 1;
+        /* Now, receive the full pong message in a loop */
+        int total_received = 0;
+        while (total_received < size) {
+            int bytes_received = recv(sock, buffer + total_received, size - total_received, 0);
+            if (bytes_received < 0) {
+                perror("Receive failed");
+                close(sock);
+                free(buffer);
+                return 1;
+            }
+            if (bytes_received == 0) {
+                // Connection closed by server
+                printf("Connection closed by server during message reception.\n");
+                close(sock);
+                free(buffer);
+                return 1;
+            }
+            total_received += bytes_received;
         }
 
         /* Get the current time after receiving (end timestamp) */
