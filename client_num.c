@@ -1,5 +1,6 @@
-#include <stdlib.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/types.h>
@@ -31,6 +32,9 @@ int main(int argc, char** argv) {
 
     /* Server port number */
     unsigned short server_port = atoi(argv[2]);
+    if(server_port > 18200 || server_port < 18000) {
+        printf("Error: Server Port must be in range\n");
+    }
 
     /* Message size and count */
     int size = atoi(argv[3]);
@@ -87,7 +91,11 @@ int main(int argc, char** argv) {
 
     /* Connect to the server */
     if (connect(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
-        perror("Connect to server failed");
+        if (errno == EADDRINUSE) {
+            fprintf(stderr, "Error: The port is already in use.\n");
+        } else {
+            perror("Connect to server failed");
+        }
         close(sock);
         free(buffer);
         return 1;
