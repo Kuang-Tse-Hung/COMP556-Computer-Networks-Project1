@@ -169,66 +169,66 @@ int main(int argc, char **argv) {
                 next = current->next;
 
                 if (FD_ISSET(current->socket, &read_set)) {
-                    /* Step 1: Receive the first 2 bytes to get the message size */
-                    unsigned short expected_size = 0;
-                    int size_count = recv(current->socket, &expected_size, sizeof(unsigned short), 0);
+                    /* Step 1: Receive the entire message (including the size) */
+                    int total_received = 0;
+                    int total_size = 0;
+                    int recv_count = 0;
 
-                    if (size_count <= 0) {
-                        if (size_count == 0) {
+                    /* First, receive the first part of the message (including size and part of the payload) */
+                    recv_count = recv(current->socket, buf, BUF_LEN, 0);
+                    if (recv_count <= 0) {
+                        if (recv_count == 0) {
                             printf("Client closed connection. Client IP address is: %s\n", inet_ntoa(current->client_addr.sin_addr));
                         } else {
-                            perror("Error receiving message size from client");
+                            perror("Error receiving message from client");
                         }
                         close(current->socket);
                         dump(&head, current->socket);
                         continue;
                     }
+                    total_received += recv_count;
 
-                    /* Convert the size from network byte order to host byte order */
+                    /* Step 2: Extract the size from the buffer (without removing it) */
+                    unsigned short expected_size = 0;
+                    memcpy(&expected_size, buf, sizeof(unsigned short));
                     expected_size = ntohs(expected_size);
                     printf("Expected size (including size bytes): %d\n", expected_size);
 
-                    /* Adjust total size to include the first 2 bytes for the size */
-                    int total_size = expected_size; // This includes the first 2 bytes (size indicator)
-                    int message_size = total_size - sizeof(unsigned short); // Message size without the size indicator
-                    printf("Message size: %d\n", message_size);
+                    total_size = expected_size;
 
-                    /* Step 2: Receive the rest of the message */
-                    int total_received = 0;
-                    while (total_received < message_size) {
-                        int recv_count = recv(current->socket, buf + total_received, message_size - total_received, 0);
-                        printf("recv_count: %d \n", recv_count);
-
-                        if (recv_count == -1) {
-                            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                                // No data available right now, try again later
-                                continue;
+                    /* Step 3: Continue receiving the remaining part of the message, if necessary */
+                    while (total_received < total_size) {
+                        recv_count = recv(current->socket, buf + total_received, total_size - total_received, 0);
+                        if (recv_count <= 0) {
+                            if (recv_count == 0) {
+                                printf("Client closed connection during message reception. IP: %s\n", inet_ntoa(current->client_addr.sin_addr));
                             } else {
                                 perror("Error receiving full message");
-                                close(current->socket);
-                                dump(&head, current->socket);
-                                break;
                             }
-                        }
-
-                        if (recv_count == 0) {
-                            printf("Client closed connection during message reception. IP: %s\n", inet_ntoa(current->client_addr.sin_addr));
                             close(current->socket);
                             dump(&head, current->socket);
                             break;
                         }
-
                         total_received += recv_count;
                     }
 
-                    /* Step 3: If we successfully received the full message, echo it back */
-                    if (total_received == message_size) {
+                    /* Step 4: Process the message (including extracting the timestamp) */
+                    if (total_received == total_size) {
+                        uint64_t received_sec, received_usec;
+                        memcpy(&received_sec, buf + 2, sizeof(received_sec));  // Start from byte 2
+                        memcpy(&received_usec, buf + 10, sizeof(received_usec));  // Start from byte 10
+
+                        received_sec = be64toh(received_sec);
+                        received_usec = be64toh(received_usec);
+
+                        printf("Received Timestamp: %lu sec, %lu usec\n", (unsigned long)received_sec, (unsigned long)received_usec);
+
+                        /* Step 5: Echo the message back to the client */
                         int total_sent = 0;
                         while (total_sent < total_size) {
-                            int sent = send(current->socket, buf + total_sent, total_size - total_sent, 0); // Echo the full message including size indicator
+                            int sent = send(current->socket, buf + total_sent, total_size - total_sent, 0);
                             if (sent == -1) {
                                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                                    // Try sending later
                                     continue;
                                 } else {
                                     perror("Error sending pong");
