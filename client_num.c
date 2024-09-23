@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/time.h>
+#include <stdint.h>  // For uint64_t
 
 /* Simple client, takes four parameters: 
    1. the server domain name,
@@ -105,12 +106,24 @@ int main(int argc, char** argv) {
         gettimeofday(&start, NULL);
 
         /* Insert the timestamp in the next 16 bytes (network byte order) */
-        unsigned long long sec = (unsigned long long)start.tv_sec;
-        unsigned long long usec = (unsigned long long)start.tv_usec;
+        uint64_t sec = (uint64_t)start.tv_sec;
+        uint64_t usec = (uint64_t)start.tv_usec;
         sec = htobe64(sec);  // Convert to network byte order (big-endian)
         usec = htobe64(usec); // Convert to network byte order (big-endian)
         memcpy(buffer + 2, &sec, sizeof(sec));
         memcpy(buffer + 10, &usec, sizeof(usec));
+
+        uint64_t received_sec, received_usec;
+        memcpy(&received_sec, buffer + 2, sizeof(received_sec));  // Extract sec from the received message
+        memcpy(&received_usec, buffer + 10, sizeof(received_usec));  // Extract usec from the received message
+
+        /* Convert from network byte order back to host byte order */
+        received_sec = be64toh(received_sec);
+        received_usec = be64toh(received_usec);
+
+        /* Print the sent and received timestamps */
+        printf("Sent Timestamp:    %ld sec, %ld usec\n", (long)start.tv_sec, (long)start.tv_usec);
+        printf("Read Timestamp from pakage: %lu sec, %lu usec\n", (unsigned long)received_sec, (unsigned long)received_usec);
 
         /* Send the ping message */
         if (send(sock, buffer, size, 0) != size) {
@@ -141,11 +154,21 @@ int main(int argc, char** argv) {
             printf("current received number at client: %d\n", total_received);
         }
 
+        uint64_t pong_sec, pong_usec;
+        memcpy(&pong_sec, buffer + 2, sizeof(pong_sec));  // Extract sec from the received message
+        memcpy(&pong_usec, buffer + 10, sizeof(pong_usec));  // Extract usec from the received message
+
+       
+        pong_sec = be64toh(pong_sec);
+        pong_usec = be64toh(pong_usec);
+
+        printf("Read Timestamp from PONG pakage: %lu sec, %lu usec\n", (unsigned long)pong_sec, (unsigned long)pong_usec);
+
         /* Get the current time after receiving (end timestamp) */
         gettimeofday(&end, NULL);
 
         /* Calculate the round-trip time (RTT) in milliseconds */
-        double rtt = (end.tv_sec - start.tv_sec) * 1000.0 + (end.tv_usec - start.tv_usec) / 1000.0;
+        double rtt = (end.tv_sec - pong_sec) * 1000.0 + (end.tv_usec - pong_usec) / 1000.0;
         total_rtt += rtt;
 
         printf("Ping-Pong exchange %d: RTT = %.3f ms\n", i + 1, rtt);
