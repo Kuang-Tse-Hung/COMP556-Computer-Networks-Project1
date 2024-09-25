@@ -1,6 +1,5 @@
-#include <errno.h>
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/types.h>
@@ -10,6 +9,7 @@
 #include <netdb.h>
 #include <sys/time.h>
 #include <stdint.h>  // For uint64_t
+#include <errno.h>
 
 /* Simple client, takes four parameters: 
    1. the server domain name,
@@ -176,7 +176,7 @@ int main(int argc, char** argv) {
         gettimeofday(&end, NULL);
 
         /* Calculate the round-trip time (RTT) in milliseconds */
-        double rtt = (end.tv_sec - pong_sec) * 1000.0 + (end.tv_usec - pong_usec) / 1000.0;
+        double rtt = (end.tv_sec - start.tv_sec) * 1000.0 + (end.tv_usec - start.tv_usec) / 1000.0;
         total_rtt += rtt;
 
         printf("Ping-Pong exchange %d: RTT = %.3f ms\n", i + 1, rtt);
